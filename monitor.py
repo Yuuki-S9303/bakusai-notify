@@ -146,19 +146,22 @@ def parse_posts(soup, base_url):
         text_el = item.select_one(".resbody")
         if not text_el:
             continue
-        # 引用部分（resOverlay）を除いた本文のみ取得
         for overlay in text_el.select(".resOverlay"):
             overlay.decompose()
         text = text_el.get_text(separator=" ", strip=True)
 
+        # 投稿日時を取得
+        date_el = item.select_one("span[itemprop='commentTime']")
+        post_date = date_el.get_text(strip=True) if date_el else ""
+
         if post_id and text:
-            # 投稿URLを正しく生成
             base = base_url.split("/p=")[0].rstrip("/")
             post_url = f"{base}/#{item.get('id')}"
             posts.append({
                 "id": post_id,
                 "text": text,
                 "url": post_url,
+                "date": post_date,
             })
     return posts
 
@@ -175,12 +178,12 @@ def save_notified_ids(data):
 
 # ── Discord通知 ───────────────────────────────────────
 def notify_discord(keywords, condition, post, thread_url):
-    keyword_str = f" {condition} ".join(keywords)
+    keyword_str = "、".join(keywords)
     message = (
-        f"🔔 **キーワード検知: `{keyword_str}`**\n"
-        f"🧵 スレッド: {thread_url}\n"
-        f"🔗 投稿URL: {post['url']}\n"
-        f"📝 内容（抜粋）: {post['text'][:200]}"
+        f"🔔 キーワード「{keyword_str}」を検知しました\n\n"
+        f"📅 {post.get('date', '')}\n"
+        f"📝 {post['text'][:200]}\n\n"
+        f"🔗 {post['url']}"
     )
     payload = {"content": message}
     try:
