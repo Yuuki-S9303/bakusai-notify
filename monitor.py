@@ -94,14 +94,14 @@ def get_latest_thread_url(acode, ctgid, bid, title_keyword):
         href = a.get("href", "")
         if not href:
             continue
+        # bidが一致するリンクのみ取得
+        if f"bid={bid}" not in href:
+            continue
         full_url = href if href.startswith("http") else BAKUSAI_BASE + href
         if "/p=" not in full_url:
             full_url = full_url.rstrip("/") + "/p=1/"
         print(f"スレッド発見: {full_url}")
         return full_url
-
-    print(f"[WARN] キーワード '{title_keyword}' に一致するスレッドが見つかりませんでした")
-    return None
 
 # ── スレッド書き込み取得（全ページ） ─────────────────
 def get_all_posts(thread_url):
