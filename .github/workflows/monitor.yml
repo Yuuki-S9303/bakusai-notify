@@ -1,0 +1,42 @@
+name: 爆サイ監視
+
+on:
+  schedule:
+    # 1日4回実行（JST 7時・12時・18時・23時 = UTC 22時・3時・9時・14時）
+    - cron: "0 22 * * *"
+    - cron: "0 3 * * *"
+    - cron: "0 9 * * *"
+    - cron: "0 14 * * *"
+  workflow_dispatch:  # 手動実行も可能
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Python セットアップ
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 依存パッケージインストール
+        run: pip install -r requirements.txt
+
+      - name: 監視スクリプト実行
+        env:
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python monitor.py
+
+      - name: 通知済みIDをコミット（変更がある場合のみ）
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add notified_ids.json
+          git diff --cached --quiet || git commit -m "chore: 通知済みID更新 [skip ci]"
+          git push
