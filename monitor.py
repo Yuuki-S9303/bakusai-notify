@@ -71,12 +71,15 @@ def is_match(text: str, keywords: list[str], condition: str) -> bool:
 # ── 最新スレッドURL取得 ───────────────────────────────
 def get_latest_thread_url(category: str, title_keyword: str) -> str | None:
     """
-    爆サイのカテゴリページを検索し、タイトルキーワードに一致する
+    爆サイのスレッド検索ページから、タイトルキーワードに一致する
     最新スレッドのURLを返す。
+    bid=412 は風俗・性感・ソープの掲示板ID（ctgid=103に対応）
     """
+    # 検索ワードはスペースを+に変換
+    encoded_word = requests.utils.quote(title_keyword, safe="")
     search_url = (
-        f"{BAKUSAI_BASE}/talkshow/tp=1/ctgid={category}/"
-        f"q={requests.utils.quote(title_keyword)}/"
+        f"{BAKUSAI_BASE}/sch_thr_thread/acode=3/ctgid={category}/bid=412/p=1/"
+        f"sch=thr_sch/sch_range=board/word={encoded_word}/"
     )
     print(f"検索URL: {search_url}")
 
@@ -89,18 +92,17 @@ def get_latest_thread_url(category: str, title_keyword: str) -> str | None:
 
     soup = BeautifulSoup(resp.text, "html.parser")
 
-    # スレッド一覧からタイトルキーワードに一致するものを取得
+    # スレッド一覧からthr_resリンクを取得（最初＝最新）
     for a in soup.select("a[href*='/thr_res/']"):
         href = a.get("href", "")
-        text = a.get_text(strip=True)
-        # キーワードの一部でも一致すれば最新スレとみなす
-        for kw in title_keyword.split():
-            if kw in text:
-                full_url = href if href.startswith("http") else BAKUSAI_BASE + href
-                # ページ1を明示的に指定
-                if "/p=" not in full_url:
-                    full_url = full_url.rstrip("/") + "/p=1/"
-                return full_url
+        if not href:
+            continue
+        full_url = href if href.startswith("http") else BAKUSAI_BASE + href
+        # ページ1を明示的に指定
+        if "/p=" not in full_url:
+            full_url = full_url.rstrip("/") + "/p=1/"
+        print(f"スレッド発見: {full_url}")
+        return full_url
 
     print(f"[WARN] キーワード '{title_keyword}' に一致するスレッドが見つかりませんでした")
     return None
