@@ -2,11 +2,14 @@ name: 爆サイ監視
 
 on:
   schedule:
-    # 1日4回実行（JST 7時・12時・18時・23時 = UTC 22時・3時・9時・14時）
-    - cron: "0 22 * * *"
-    - cron: "0 3 * * *"
-    - cron: "0 9 * * *"
-    - cron: "0 14 * * *"
+    - cron: "0 18 * * *"  # JST 3:00
+    - cron: "0 21 * * *"  # JST 6:00
+    - cron: "0 0 * * *"   # JST 9:00
+    - cron: "0 3 * * *"   # JST 12:00
+    - cron: "0 6 * * *"   # JST 15:00
+    - cron: "0 9 * * *"   # JST 18:00
+    - cron: "0 12 * * *"  # JST 21:00
+    - cron: "0 15 * * *"  # JST 24:00(0:00)
   workflow_dispatch:  # 手動実行も可能
 
 jobs:
