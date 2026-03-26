@@ -141,13 +141,20 @@ def get_all_posts(thread_url):
 
 def parse_posts(soup, base_url):
     posts = []
-    for item in soup.select(".resItem, .res-item, [id^='res']"):
+    for item in soup.select("div.article[id^='res']"):
         post_id = item.get("id", "").replace("res", "").strip()
-        text_el = item.select_one(".resText, .res-text, .text")
-        text = text_el.get_text(separator=" ", strip=True) if text_el else item.get_text(separator=" ", strip=True)
+        text_el = item.select_one(".resbody")
+        if not text_el:
+            continue
+        # 引用部分（resOverlay）を除いた本文のみ取得
+        for overlay in text_el.select(".resOverlay"):
+            overlay.decompose()
+        text = text_el.get_text(separator=" ", strip=True)
 
         if post_id and text:
-            post_url = f"{base_url.split('/p=')[0]}/#res{post_id}"
+            # 投稿URLを正しく生成
+            base = base_url.split("/p=")[0].rstrip("/")
+            post_url = f"{base}/#{item.get('id')}"
             posts.append({
                 "id": post_id,
                 "text": text,
