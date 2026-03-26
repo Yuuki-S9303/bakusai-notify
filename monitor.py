@@ -30,10 +30,12 @@ def load_targets_from_sheet():
     """
     スプシの構成（1行目はヘッダー）:
     A: thread_title_keyword  （スレ検索キーワード）
-    B: category              （爆サイのctgid番号）
-    C: detect_keyword        （検知ワード、複数はカンマ区切り）
-    D: detect_condition      （AND または OR）
-    E: active                （TRUE/FALSEで監視ON/OFF）
+    B: acode                 （爆サイのacode）
+    C: ctgid                 （爆サイのカテゴリID）
+    D: bid                   （爆サイの掲示板ID）
+    E: detect_keyword        （検知ワード、複数はカンマ区切り）
+    F: detect_condition      （AND または OR）
+    G: active                （TRUE/FALSEで監視ON/OFF）
     """
     import json as _json
     creds_info = _json.loads(SERVICE_ACCOUNT_JSON)
@@ -42,43 +44,39 @@ def load_targets_from_sheet():
 
     result = service.spreadsheets().values().get(
         spreadsheetId=SPREADSHEET_ID,
-        range="A2:E100"
+        range="A2:G100"
     ).execute()
 
     rows = result.get("values", [])
     targets = []
     for row in rows:
-        if len(row) < 5:
+        if len(row) < 7:
             continue
-        thread_title_keyword, category, detect_keyword, detect_condition, active = row[:5]
+        thread_title_keyword, acode, ctgid, bid, detect_keyword, detect_condition, active = row[:7]
         if active.strip().upper() != "TRUE":
             continue
         targets.append({
             "thread_title_keyword": thread_title_keyword.strip(),
-            "category": category.strip(),
+            "acode": acode.strip(),
+            "ctgid": ctgid.strip(),
+            "bid": bid.strip(),
             "detect_keywords": [kw.strip() for kw in detect_keyword.split(",")],
             "detect_condition": detect_condition.strip().upper() or "OR",
         })
     return targets
 
 # ── キーワードマッチ判定 ──────────────────────────────
-def is_match(text: str, keywords: list[str], condition: str) -> bool:
+def is_match(text, keywords, condition):
     if condition == "AND":
         return all(kw in text for kw in keywords)
-    else:  # OR（デフォルト）
+    else:
         return any(kw in text for kw in keywords)
 
 # ── 最新スレッドURL取得 ───────────────────────────────
-def get_latest_thread_url(category: str, title_keyword: str) -> str | None:
-    """
-    爆サイのスレッド検索ページから、タイトルキーワードに一致する
-    最新スレッドのURLを返す。
-    bid=412 は風俗・性感・ソープの掲示板ID（ctgid=103に対応）
-    """
-    # 検索ワードはスペースを+に変換
+def get_latest_thread_url(acode, ctgid, bid, title_keyword):
     encoded_word = requests.utils.quote(title_keyword, safe="")
     search_url = (
-        f"{BAKUSAI_BASE}/sch_thr_thread/acode=3/ctgid={category}/bid=412/p=1/"
+        f"{BAKUSAI_BASE}/sch_thr_thread/acode={acode}/ctgid={ctgid}/bid={bid}/p=1/"
         f"sch=thr_sch/sch_range=board/word={encoded_word}/"
     )
     print(f"検索URL: {search_url}")
@@ -92,13 +90,11 @@ def get_latest_thread_url(category: str, title_keyword: str) -> str | None:
 
     soup = BeautifulSoup(resp.text, "html.parser")
 
-    # スレッド一覧からthr_resリンクを取得（最初＝最新）
     for a in soup.select("a[href*='/thr_res/']"):
         href = a.get("href", "")
         if not href:
             continue
         full_url = href if href.startswith("http") else BAKUSAI_BASE + href
-        # ページ1を明示的に指定
         if "/p=" not in full_url:
             full_url = full_url.rstrip("/") + "/p=1/"
         print(f"スレッド発見: {full_url}")
@@ -108,15 +104,11 @@ def get_latest_thread_url(category: str, title_keyword: str) -> str | None:
     return None
 
 # ── スレッド書き込み取得（全ページ） ─────────────────
-def get_all_posts(thread_url: str) -> list[dict]:
-    """
-    スレッドの全ページから書き込みを取得する。
-    """
+def get_all_posts(thread_url):
     all_posts = []
     page = 1
 
     while True:
-        # ページURLを生成（p=1, p=2, ...）
         paged_url = thread_url.replace("/p=1/", f"/p={page}/") \
             if "/p=" in thread_url \
             else thread_url.rstrip("/") + f"/p={page}/"
@@ -138,7 +130,6 @@ def get_all_posts(thread_url: str) -> list[dict]:
 
         all_posts.extend(posts)
 
-        # 次ページの存在確認
         next_link = soup.find("a", string=lambda t: t and "次" in t)
         if not next_link:
             break
@@ -148,13 +139,8 @@ def get_all_posts(thread_url: str) -> list[dict]:
 
     return all_posts
 
-def parse_posts(soup: BeautifulSoup, base_url: str) -> list[dict]:
-    """
-    BeautifulSoupオブジェクトから投稿を抽出する。
-    """
+def parse_posts(soup, base_url):
     posts = []
-
-    # 爆サイの投稿要素を取得（実際のHTMLに合わせて調整済み）
     for item in soup.select(".resItem, .res-item, [id^='res']"):
         post_id = item.get("id", "").replace("res", "").strip()
         text_el = item.select_one(".resText, .res-text, .text")
@@ -167,22 +153,21 @@ def parse_posts(soup: BeautifulSoup, base_url: str) -> list[dict]:
                 "text": text,
                 "url": post_url,
             })
-
     return posts
 
 # ── 通知済みID管理 ────────────────────────────────────
-def load_notified_ids() -> dict:
+def load_notified_ids():
     if os.path.exists(NOTIFIED_IDS_FILE):
         with open(NOTIFIED_IDS_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     return {}
 
-def save_notified_ids(data: dict):
+def save_notified_ids(data):
     with open(NOTIFIED_IDS_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 # ── Discord通知 ───────────────────────────────────────
-def notify_discord(keywords: list[str], condition: str, post: dict, thread_url: str):
+def notify_discord(keywords, condition, post, thread_url):
     keyword_str = f" {condition} ".join(keywords)
     message = (
         f"🔔 **キーワード検知: `{keyword_str}`**\n"
@@ -215,26 +200,25 @@ def main():
 
     for target in targets:
         keyword_title = target["thread_title_keyword"]
-        category = target["category"]
+        acode = target["acode"]
+        ctgid = target["ctgid"]
+        bid = target["bid"]
         detect_keywords = target["detect_keywords"]
         detect_condition = target["detect_condition"]
 
         print(f"\n--- [{keyword_title}] 処理中 ---")
         print(f"検知キーワード: {detect_keywords} ({detect_condition}条件)")
 
-        # 最新スレッドURLを取得
-        thread_url = get_latest_thread_url(category, keyword_title)
+        thread_url = get_latest_thread_url(acode, ctgid, bid, keyword_title)
         if not thread_url:
             continue
 
         print(f"最新スレッド: {thread_url}")
 
-        # 全ページの書き込みを取得
         posts = get_all_posts(thread_url)
         print(f"取得した書き込み数: {len(posts)}")
 
-        # 通知済みIDの管理キー
-        notified_key = f"{keyword_title}_{category}"
+        notified_key = f"{keyword_title}_{ctgid}_{bid}"
         if notified_key not in notified_ids:
             notified_ids[notified_key] = []
 
