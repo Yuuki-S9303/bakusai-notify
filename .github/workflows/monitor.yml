@@ -1,48 +1,48 @@
 name: 爆サイ監視
 
-  on:
-    schedule:
-      - cron: "0 18 * * *"  # JST 3:00
-      - cron: "0 21 * * *"  # JST 6:00
-      - cron: "0 0 * * *"   # JST 9:00
-      - cron: "0 3 * * *"   # JST 12:00
-      - cron: "0 6 * * *"   # JST 15:00
-      - cron: "0 9 * * *"   # JST 18:00
-      - cron: "0 12 * * *"  # JST 21:00
-      - cron: "0 15 * * *"  # JST 24:00(0:00)
-    workflow_dispatch:
+on:
+  schedule:
+    - cron: "0 18 * * *"  # JST 3:00
+    - cron: "0 21 * * *"  # JST 6:00
+    - cron: "0 0 * * *"   # JST 9:00
+    - cron: "0 3 * * *"   # JST 12:00
+    - cron: "0 6 * * *"   # JST 15:00
+    - cron: "0 9 * * *"   # JST 18:00
+    - cron: "0 12 * * *"  # JST 21:00
+    - cron: "0 15 * * *"  # JST 24:00(0:00)
+  workflow_dispatch:
 
-  jobs:
-    monitor:
-      runs-on: ubuntu-latest
-      env:
-        FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-      steps:
-        - name: Checkout
-          uses: actions/checkout@v4
-          with:
-            token: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-        - name: Python セットアップ
-          uses: actions/setup-python@v5
-          with:
-            python-version: "3.12"
+      - name: Python セットアップ
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-        - name: 依存パッケージインストール
-          run: pip install -r requirements.txt
+      - name: 依存パッケージインストール
+        run: pip install -r requirements.txt
 
-        - name: 監視スクリプト実行
-          env:
-            SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-            GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-            DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          run: python monitor.py
+      - name: 監視スクリプト実行
+        env:
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python monitor.py
 
-        - name: 通知済みIDをコミット（変更がある場合のみ）
-          run: |
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add notified_ids.json
-            git diff --cached --quiet || git commit -m "chore: 通知済みID更新 [skip ci]"
-            git push
+      - name: 通知済みIDをコミット（変更がある場合のみ）
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add notified_ids.json
+          git diff --cached --quiet || git commit -m "chore: 通知済みID更新 [skip ci]"
+          git push
