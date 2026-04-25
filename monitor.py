@@ -48,6 +48,9 @@ def load_targets_from_sheet():
     ).execute()
 
     rows = result.get("values", [])
+    print(f"スプシ取得行数: {len(rows)}")
+    for i, row in enumerate(rows):
+        print(f"  行{i+2}: len={len(row)} | {row}")
     targets = []
     for row in rows:
         if len(row) < 7:
