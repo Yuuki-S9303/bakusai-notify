@@ -196,12 +196,21 @@ def notify_discord(keywords, condition, post, thread_url):
         f"🔗 {post['url']}"
     )
     payload = {"content": message}
-    try:
-        resp = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
-        resp.raise_for_status()
-        print(f"[OK] Discord通知送信: post_id={post['id']}")
-    except Exception as e:
-        print(f"[ERROR] Discord通知失敗: {e}")
+    for attempt in range(3):
+        try:
+            resp = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
+            if resp.status_code == 429:
+                wait = float(resp.headers.get("Retry-After", 5))
+                print(f"[WAIT] レート制限 {wait}秒待機...")
+                time.sleep(wait)
+                continue
+            resp.raise_for_status()
+            print(f"[OK] Discord通知送信: post_id={post['id']}")
+            return True
+        except Exception as e:
+            print(f"[ERROR] Discord通知失敗: {e}")
+            return False
+    return False
 
 # ── メイン処理 ────────────────────────────────────────
 def main():
@@ -249,9 +258,9 @@ def main():
                 continue
 
             if is_match(post["text"], detect_keywords, detect_condition):
-                notify_discord(detect_keywords, detect_condition, post, thread_url)
-                notified_ids[notified_key].append(post_id)
-                updated = True
+                if notify_discord(detect_keywords, detect_condition, post, thread_url):
+                    notified_ids[notified_key].append(post_id)
+                    updated = True
 
         time.sleep(2)
 
