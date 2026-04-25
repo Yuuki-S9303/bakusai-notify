@@ -55,18 +55,22 @@ def load_targets_from_sheet():
         thread_title_keyword, acode, ctgid, bid, detect_keyword, detect_condition, active = row[:7]
         if active.strip().upper() != "TRUE":
             continue
+        kws = [kw.strip() for kw in detect_keyword.split(",") if kw.strip()]
         targets.append({
             "thread_title_keyword": thread_title_keyword.strip(),
             "acode": acode.strip(),
             "ctgid": ctgid.strip(),
             "bid": bid.strip(),
-            "detect_keywords": [kw.strip() for kw in detect_keyword.split(",")],
+            "detect_keywords": kws,
             "detect_condition": detect_condition.strip().upper() or "OR",
         })
     return targets
 
 # ── キーワードマッチ判定 ──────────────────────────────
 def is_match(text, keywords, condition):
+    # キーワード未設定 or "*" → 全件マッチ
+    if not keywords or keywords == ["*"]:
+        return True
     if condition == "AND":
         return all(kw in text for kw in keywords)
     else:
@@ -178,9 +182,12 @@ def save_notified_ids(data):
 
 # ── Discord通知 ───────────────────────────────────────
 def notify_discord(keywords, condition, post, thread_url):
-    keyword_str = "、".join(keywords)
+    if keywords and keywords != ["*"]:
+        header = f"🔔 キーワード「{'、'.join(keywords)}」を検知しました"
+    else:
+        header = "🔔 新着書き込みを検知しました"
     message = (
-        f"🔔 キーワード「{keyword_str}」を検知しました\n\n"
+        f"{header}\n\n"
         f"📅 {post.get('date', '')}\n"
         f"📝 {post['text'][:200]}\n\n"
         f"🔗 {post['url']}"
