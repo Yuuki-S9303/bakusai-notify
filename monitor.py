@@ -44,7 +44,7 @@ def load_targets_from_sheet():
 
     result = service.spreadsheets().values().get(
         spreadsheetId=SPREADSHEET_ID,
-        range="A2:G100"
+        range="監視KW管理!A2:G100"
     ).execute()
 
     rows = result.get("values", [])
