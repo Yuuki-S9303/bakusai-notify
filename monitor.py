@@ -25,6 +25,9 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 }
 
+# 1ターゲット・1実行あたりの最大通知件数
+MAX_NOTIFY_PER_TARGET = 5
+
 # ── Google Sheets 読み込み ────────────────────────────
 def load_targets_from_sheet():
     """
@@ -197,12 +200,17 @@ def notify_discord(keywords, condition, post, thread_url):
         try:
             resp = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
             if resp.status_code == 429:
-                wait = float(resp.headers.get("Retry-After", 5))
-                print(f"[WAIT] レート制限 {wait}秒待機...")
-                time.sleep(wait)
+                retry_after = float(resp.headers.get("Retry-After", 5))
+                # レート制限が長すぎる場合は次回実行に持ち越し
+                if retry_after > 60:
+                    print(f"[SKIP] レート制限 {retry_after}秒 → 次回実行に持ち越し")
+                    return False
+                print(f"[WAIT] レート制限 {retry_after}秒待機...")
+                time.sleep(retry_after)
                 continue
             resp.raise_for_status()
             print(f"[OK] Discord通知送信: post_id={post['id']}")
+            time.sleep(1)
             return True
         except Exception as e:
             print(f"[ERROR] Discord通知失敗: {e}")
@@ -248,16 +256,22 @@ def main():
         if notified_key not in notified_ids:
             notified_ids[notified_key] = []
 
+        notify_count = 0
         for post in posts:
             post_id = post["id"]
 
             if post_id in notified_ids[notified_key]:
                 continue
 
+            if notify_count >= MAX_NOTIFY_PER_TARGET:
+                print(f"[LIMIT] 上限{MAX_NOTIFY_PER_TARGET}件到達 → 残りは次回")
+                break
+
             if is_match(post["text"], detect_keywords, detect_condition):
                 if notify_discord(detect_keywords, detect_condition, post, thread_url):
                     notified_ids[notified_key].append(post_id)
                     updated = True
+                    notify_count += 1
 
         time.sleep(2)
 
