@@ -256,11 +256,18 @@ def main():
         if notified_key not in notified_ids:
             notified_ids[notified_key] = []
 
+        seen_ids = set(notified_ids[notified_key])
+        max_seen_id = max((int(i) for i in seen_ids if i.isdigit()), default=0)
+
         notify_count = 0
         for post in posts:
             post_id = post["id"]
 
-            if post_id in notified_ids[notified_key]:
+            if post_id in seen_ids:
+                continue
+
+            # 監視開始前の古い投稿はスキップ
+            if max_seen_id > 0 and post_id.isdigit() and int(post_id) < max_seen_id:
                 continue
 
             if notify_count >= MAX_NOTIFY_PER_TARGET:
@@ -270,6 +277,7 @@ def main():
             if is_match(post["text"], detect_keywords, detect_condition):
                 if notify_discord(detect_keywords, detect_condition, post, thread_url):
                     notified_ids[notified_key].append(post_id)
+                    seen_ids.add(post_id)
                     updated = True
                     notify_count += 1
 
