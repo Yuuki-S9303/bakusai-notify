@@ -253,11 +253,22 @@ def main():
         print(f"取得した書き込み数: {len(posts)}")
 
         notified_key = f"{keyword_title}_{ctgid}_{bid}"
-        if notified_key not in notified_ids:
+        is_new_target = notified_key not in notified_ids
+        if is_new_target:
             notified_ids[notified_key] = []
 
         seen_ids = set(notified_ids[notified_key])
         max_seen_id = max((int(i) for i in seen_ids if i.isdigit()), default=0)
+
+        # 新規ターゲットは既存投稿を全スキップして初期化
+        if is_new_target and posts:
+            max_post_id = max((int(p["id"]) for p in posts if p["id"].isdigit()), default=0)
+            if max_post_id > 0:
+                notified_ids[notified_key].append(str(max_post_id))
+                updated = True
+                print(f"[INIT] 新規ターゲット。res#{max_post_id}以前をスキップ → 次回から監視開始")
+            time.sleep(2)
+            continue
 
         notify_count = 0
         for post in posts:
