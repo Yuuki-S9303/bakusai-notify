@@ -173,10 +173,25 @@ def parse_posts(soup, base_url):
     return posts
 
 # ── 通知済みID管理 ────────────────────────────────────
+def migrate_notified_ids(data):
+    """
+    旧形式（キー: IDリスト）を新形式（キー: {thread_url, baseline_id, ids}）へ変換。
+    thread_urlをNoneにすることで次回実行時にスレ変更扱いとなり、
+    baseline_idが現在の最新投稿IDに再設定される（＝安全な再初期化）。
+    """
+    migrated = {}
+    for key, value in data.items():
+        if isinstance(value, list):
+            migrated[key] = {"thread_url": None, "baseline_id": 0, "ids": []}
+        else:
+            migrated[key] = value
+    return migrated
+
 def load_notified_ids():
     if os.path.exists(NOTIFIED_IDS_FILE):
         with open(NOTIFIED_IDS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+        return migrate_notified_ids(data)
     return {}
 
 def save_notified_ids(data):
@@ -213,8 +228,9 @@ def notify_discord(keywords, condition, post, thread_url):
             time.sleep(1)
             return True
         except Exception as e:
-            print(f"[ERROR] Discord通知失敗: {e}")
-            return False
+            print(f"[ERROR] Discord通知失敗（試行{attempt + 1}/3）: {e}")
+            if attempt < 2:
+                time.sleep(2 ** attempt)
     return False
 
 # ── メイン処理 ────────────────────────────────────────
@@ -253,22 +269,34 @@ def main():
         print(f"取得した書き込み数: {len(posts)}")
 
         notified_key = f"{keyword_title}_{ctgid}_{bid}"
-        is_new_target = notified_key not in notified_ids
-        if is_new_target:
-            notified_ids[notified_key] = []
+        entry = notified_ids.get(notified_key)
+        is_new_target = entry is None
+        thread_changed = (not is_new_target) and entry.get("thread_url") != thread_url
 
-        seen_ids = set(notified_ids[notified_key])
-        max_seen_id = max((int(i) for i in seen_ids if i.isdigit()), default=0)
-
-        # 新規ターゲットは既存投稿を全スキップして初期化
-        if is_new_target and posts:
+        # 新規ターゲット／スレ移行（爆サイはスレが上限に達すると新スレへ移行しID1から再開する）は
+        # 既存投稿を全スキップして初期化。posts取得に失敗した場合は notified_ids に書き込まず、
+        # 次回実行でも「未初期化」のまま再試行させる（中途半端な状態を保存しない）。
+        if is_new_target or thread_changed:
+            if not posts:
+                reason = "新規ターゲット" if is_new_target else "スレ移行検知"
+                print(f"[SKIP] {reason}だが書き込み取得失敗 → 次回に初期化を持ち越し")
+                time.sleep(2)
+                continue
             max_post_id = max((int(p["id"]) for p in posts if p["id"].isdigit()), default=0)
-            if max_post_id > 0:
-                notified_ids[notified_key].append(str(max_post_id))
-                updated = True
-                print(f"[INIT] 新規ターゲット。res#{max_post_id}以前をスキップ → 次回から監視開始")
+            notified_ids[notified_key] = {
+                "thread_url": thread_url,
+                "baseline_id": max_post_id,
+                "ids": [],
+            }
+            updated = True
+            reason = "新規ターゲット" if is_new_target else "スレ移行検知"
+            print(f"[INIT] {reason}。res#{max_post_id}以前をスキップ → 次回から監視開始")
             time.sleep(2)
             continue
+
+        entry_ids = entry["ids"]
+        seen_ids = set(entry_ids)
+        baseline_id = entry.get("baseline_id", 0)
 
         notify_count = 0
         for post in posts:
@@ -277,8 +305,10 @@ def main():
             if post_id in seen_ids:
                 continue
 
-            # 監視開始前の古い投稿はスキップ
-            if max_seen_id > 0 and post_id.isdigit() and int(post_id) < max_seen_id:
+            # 初期化基準ID以前（監視開始前）の投稿はスキップ。
+            # baseline_idは初期化時に固定した値のため、通知が一時的に失敗した
+            # 投稿があっても後続投稿の通知成功で誤ってスキップされることはない。
+            if post_id.isdigit() and int(post_id) <= baseline_id:
                 continue
 
             if notify_count >= MAX_NOTIFY_PER_TARGET:
@@ -287,7 +317,7 @@ def main():
 
             if is_match(post["text"], detect_keywords, detect_condition):
                 if notify_discord(detect_keywords, detect_condition, post, thread_url):
-                    notified_ids[notified_key].append(post_id)
+                    entry_ids.append(post_id)
                     seen_ids.add(post_id)
                     updated = True
                     notify_count += 1
